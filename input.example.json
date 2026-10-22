@@ -1,0 +1,7 @@
+{
+  "mode": "google",
+  "queries": ["web scraping python", "mejores cafeterías madrid"],
+  "maxPagesPerQuery": 1,
+  "countryCode": "es",
+  "languageCode": "es"
+}

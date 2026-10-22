@@ -1,0 +1,31 @@
+# Render Blueprint: New → Blueprint → pick this repo.
+services:
+  - type: web
+    name: ultimate-scraper
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # Chromium needs ~1 GB per browser; "standard" (2 GB) is the smallest plan that is comfortable.
+    plan: standard
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: API_KEY
+        generateValue: true
+      - key: MAX_CONCURRENT_JOBS
+        value: "2"
+      - key: MAX_BROWSER_CONCURRENCY
+        value: "2"
+      - key: SYNC_TIMEOUT_SECS
+        value: "120"
+      - key: JOB_TTL_MINUTES
+        value: "60"
+      # Comma-separated proxy URLs (http://user:pass@host:port). Residential ones are needed for Google and Instagram.
+      - key: PROXY_URLS
+        sync: false
+      # Any OpenAI-compatible API (Gemini, DeepSeek, Qwen, Groq, OpenRouter, OpenAI, Ollama…). See README.
+      - key: LLM_BASE_URL
+        sync: false
+      - key: LLM_MODEL
+        sync: false
+      - key: LLM_API_KEY
+        sync: false
