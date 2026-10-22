@@ -23,6 +23,16 @@ Combina las mejores ideas de los proyectos open source líderes. Corre como **AP
 | Respaldo con navegador que lee el GraphQL que carga la propia página (sin `doc_id` fijo) | [instagram-graphql-scraper](https://github.com/FaustRen/instagram-graphql-scraper) | `src/instagram/crawler.ts` |
 | Descubrir perfiles del nicho con Google `site:instagram.com` | (propio, reutiliza el scraper de Google) | `discoverQuery` |
 
+## Interfaz web
+
+Abre la URL del servicio (p. ej. `https://sandalphon.onrender.com`) en el navegador:
+
+- **✨ Preguntar a la IA**: escribe lo que quieres saber con tus palabras; la IA decide qué buscar,
+  lo ejecuta y responde.
+- **Instagram**, **Google** y **Páginas web**: formularios para controlar los parámetros a mano.
+- Progreso en vivo, resultados en tablas, descarga a Excel (CSV) y JSON, e historial de búsquedas.
+- La API key se escribe una vez y queda guardada **solo en tu navegador**.
+
 ## API (Render)
 
 Todas las rutas salvo `/health` requieren `x-api-key: <API_KEY>` o `Authorization: Bearer <API_KEY>`.
@@ -168,7 +178,7 @@ resultados (o usa `webhookUrl`) antes de que caduquen.
 npm install
 npm start -- input.json --out resultados.ndjson   # CLI
 npm run serve                                     # API local en :10000
-npm test                                          # 24 pruebas (servidores locales + Chromium)
+npm test                                          # 26 pruebas (servidores locales + Chromium)
 ```
 
 En Apify: `apify push` (usa `.actor/`). Los registros van al dataset, la respuesta de la IA a la clave

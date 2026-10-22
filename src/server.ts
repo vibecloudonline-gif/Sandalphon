@@ -1,7 +1,9 @@
 /**
  * REST API for Render (or any container host).
  *
+ *   GET    /                web interface (public/index.html; it asks for the API key)
  *   GET    /health
+ *   GET    /config          what the server has configured (AI, proxies), for the web interface
  *   POST   /google          { queries, maxPagesPerQuery?, countryCode?, languageCode?, ... }
  *   POST   /scrape          { url | urls, fields?, renderingMode?, ... }   one page per URL, no crawling
  *   POST   /crawl           { startUrls, maxPages?, maxDepth?, ... }       always async
@@ -16,6 +18,7 @@
  * Auth: `Authorization: Bearer <API_KEY>` or `x-api-key: <API_KEY>` when API_KEY is set.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { readFileSync } from 'node:fs';
 import { timingSafeEqual } from 'node:crypto';
 import { log } from 'crawlee';
 import { abortJob, createJob, fingerprints, getJob, publicJob, type Job, type JobOptions } from './jobs.js';
@@ -26,6 +29,15 @@ const PORT = Number(process.env.PORT ?? 10000);
 const API_KEY = process.env.API_KEY ?? '';
 const SYNC_TIMEOUT_MS = Number(process.env.SYNC_TIMEOUT_SECS ?? 120) * 1000;
 const MAX_BODY = 1_000_000;
+
+// Read once at startup; works from src/ (tsx) and dist/ (node) alike.
+const UI_HTML = (() => {
+    try {
+        return readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+    } catch {
+        return undefined;
+    }
+})();
 
 if (!API_KEY) log.warning('API_KEY is not set: the API is open to anyone who knows the URL.');
 
@@ -91,10 +103,25 @@ async function route(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const path = url.pathname.replace(/\/+$/, '') || '/';
 
+    if (req.method === 'GET' && path === '/' && UI_HTML) {
+        res.writeHead(200, {
+            'content-type': 'text/html; charset=utf-8',
+            'cache-control': 'no-cache',
+            // The page only talks to this same server.
+            'content-security-policy': "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+            'x-content-type-options': 'nosniff',
+            'referrer-policy': 'no-referrer',
+        });
+        return res.end(UI_HTML);
+    }
     if (req.method === 'GET' && (path === '/health' || path === '/')) {
         return send(res, 200, { ok: true, service: 'ultimate-scraper', endpoints: ['POST /ask', 'POST /google', 'POST /scrape', 'POST /crawl', 'POST /instagram', 'GET /jobs/:id', 'GET /jobs/:id/results'] });
     }
     if (!authorized(req)) throw new HttpError(401, 'Missing or invalid API key');
+
+    if (req.method === 'GET' && path === '/config') {
+        return send(res, 200, { ai: Boolean(llmConfig()), proxies: Boolean(process.env.PROXY_URLS?.trim()) });
+    }
 
     if (req.method === 'POST' && path === '/google') {
         const body = await readJson(req);
