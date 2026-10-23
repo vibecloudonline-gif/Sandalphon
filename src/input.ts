@@ -1,4 +1,43 @@
+import { isIP } from 'node:net';
 import type { ProxyConfigurationOptions } from 'crawlee';
+
+/**
+ * SSRF guard (added 23 oct 2026, per the deploy guide's own note: "haz una
+ * revisión de seguridad específica de SSRF/redirecciones... API_KEY
+ * protege el acceso, pero no sustituye esa revisión"). Synchronous by
+ * design -- normalizeInput() is called synchronously from server.ts/jobs.ts
+ * and making this async would mean threading `await` through the whole
+ * request path. This blocks the common, cheap case (a literal private/
+ * loopback/link-local IP, or a known-internal hostname) -- it does NOT
+ * protect against a public hostname that resolves to a private IP at
+ * request time (DNS rebinding), which would need an async check at the
+ * point crawlee actually dials the connection.
+ */
+function assertPublicHost(url: string): void {
+    // vitest setea NODE_ENV=test automáticamente (confirmado corriendo la
+    // suite) -- tests/web.test.ts levanta un servidor HTTP real en
+    // localhost (tests/site.js) y rastrea CONTRA él a propósito, caso de
+    // uso legítimo que esta guardia bloquearía si no se exceptuara. No
+    // se toca en ningún entorno real (Docker/Render nunca corre con
+    // NODE_ENV=test).
+    if (process.env.NODE_ENV === 'test') return;
+    const hostname = new URL(url).hostname;
+    const lower = hostname.toLowerCase();
+    if (lower === 'localhost' || lower.endsWith('.local') || lower.endsWith('.internal')) {
+        throw new Error(`Input error: internal host not allowed: ${hostname}`);
+    }
+    const kind = isIP(hostname);
+    if (kind === 4) {
+        const [a, b] = hostname.split('.').map(Number);
+        const isPrivate = a === 127 || a === 10 || a === 0 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
+        if (isPrivate) throw new Error(`Input error: private/internal IP not allowed: ${hostname}`);
+    } else if (kind === 6) {
+        const low = hostname.toLowerCase();
+        if (low === '::1' || low.startsWith('fe80:') || low.startsWith('fc') || low.startsWith('fd') || low.startsWith('::ffff:127.')) {
+            throw new Error(`Input error: private/internal IP not allowed: ${hostname}`);
+        }
+    }
+}
 
 /** A field to extract with a CSS selector. A plain string is shorthand for `{ selector }`. */
 export interface FieldSpec {
@@ -165,6 +204,7 @@ export function normalizeInput(raw: RawInput | null | undefined): Input {
     if (mode === 'google' && !google.queries.length) throw new Error('Input error: "queries" is required in google mode.');
     for (const { url } of web.startUrls) {
         if (!/^https?:\/\//i.test(url)) throw new Error(`Input error: start URL must be http(s): ${url}`);
+        assertPublicHost(url);
     }
 
     return {
