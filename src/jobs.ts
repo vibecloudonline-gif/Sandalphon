@@ -5,6 +5,7 @@ import { FingerprintStore } from './shared/adaptive.js';
 import { runGoogle } from './google/crawler.js';
 import { runWeb } from './web/crawler.js';
 import { runInstagram } from './instagram/crawler.js';
+import { runFacebook } from './facebook/crawler.js';
 import { planScrape, writeInsights } from './ai/brief.js';
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'aborted';
@@ -59,6 +60,7 @@ function release(): void {
 export async function runInput(input: Input, emit: (r: unknown) => void | Promise<void>, signal?: AbortSignal) {
     if (input.mode === 'google') return runGoogle(input, emit, signal);
     if (input.mode === 'instagram') return runInstagram(input, emit, signal);
+    if (input.mode === 'facebook') return runFacebook(input, emit, signal);
     return runWeb(input, emit, fingerprints, signal);
 }
 

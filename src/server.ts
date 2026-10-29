@@ -8,13 +8,14 @@
  *   POST   /scrape          { url | urls, fields?, renderingMode?, ... }   one page per URL, no crawling
  *   POST   /crawl           { startUrls, maxPages?, maxDepth?, ... }       always async
  *   POST   /instagram       { usernames?, discoverQuery?, maxPostsPerProfile?, timeZone?, ... }
+ *   POST   /facebook        { pages }   usernames, @handles or facebook.com URLs -- see facebook/crawler.ts
  *   POST   /ask             { brief }   the AI plans the scrape from the client's words, runs it and answers
  *   Any POST also accepts "brief": with it, an AI answer to the brief is added to the job ("insights").
  *   GET    /jobs/:id
  *   GET    /jobs/:id/results?format=json|ndjson|csv&offset=0&limit=100
  *   DELETE /jobs/:id
  *
- * /google, /scrape and /instagram wait for the result (up to SYNC_TIMEOUT_SECS) unless `"async": true`.
+ * /google, /scrape, /instagram and /facebook wait for the result (up to SYNC_TIMEOUT_SECS) unless `"async": true`.
  * Auth: `Authorization: Bearer <API_KEY>` or `x-api-key: <API_KEY>` when API_KEY is set.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -115,12 +116,19 @@ async function route(req: IncomingMessage, res: ServerResponse) {
         return res.end(UI_HTML);
     }
     if (req.method === 'GET' && (path === '/health' || path === '/')) {
-        return send(res, 200, { ok: true, service: 'ultimate-scraper', endpoints: ['POST /ask', 'POST /google', 'POST /scrape', 'POST /crawl', 'POST /instagram', 'GET /jobs/:id', 'GET /jobs/:id/results'] });
+        return send(res, 200, { ok: true, service: 'ultimate-scraper', endpoints: ['POST /ask', 'POST /google', 'POST /scrape', 'POST /crawl', 'POST /instagram', 'POST /facebook', 'GET /jobs/:id', 'GET /jobs/:id/results'] });
     }
     if (!authorized(req)) throw new HttpError(401, 'Missing or invalid API key');
 
     if (req.method === 'GET' && path === '/config') {
-        return send(res, 200, { ai: Boolean(llmConfig()), proxies: Boolean(process.env.PROXY_URLS?.trim()) });
+        return send(res, 200, {
+            ai: Boolean(llmConfig()),
+            proxies: Boolean(process.env.PROXY_URLS?.trim()),
+            // 29 oct 2026: proxyTiers -- cuántos proveedores de proxy hay encadenados
+            // (1 = solo PROXY_URLS, 2 = PROXY_URLS + PROXY_URLS_TIER2 en cascada).
+            // Ver shared/setup.ts's makeProxy().
+            proxyTiers: Number(Boolean(process.env.PROXY_URLS?.trim())) + Number(Boolean(process.env.PROXY_URLS_TIER2?.trim())),
+        });
     }
 
     if (req.method === 'POST' && path === '/google') {
@@ -146,6 +154,11 @@ async function route(req: IncomingMessage, res: ServerResponse) {
     if (req.method === 'POST' && path === '/instagram') {
         const body = await readJson(req);
         const job = createJob({ ...body, mode: 'instagram' }, jobOptions(body));
+        return respondWhenDone(res, job, body.async === true);
+    }
+    if (req.method === 'POST' && path === '/facebook') {
+        const body = await readJson(req);
+        const job = createJob({ ...body, mode: 'facebook' }, jobOptions(body));
         return respondWhenDone(res, job, body.async === true);
     }
     if (req.method === 'POST' && path === '/crawl') {

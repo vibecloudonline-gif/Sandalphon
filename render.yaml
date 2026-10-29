@@ -19,8 +19,13 @@ services:
         value: "120"
       - key: JOB_TTL_MINUTES
         value: "60"
-      # Comma-separated proxy URLs (http://user:pass@host:port). Residential ones are needed for Google and Instagram.
+      # Comma-separated proxy URLs (http://user:pass@host:port). Residential ones are needed for Google, Instagram and Facebook.
+      # Tier 0 (preferred/cheapest provider).
       - key: PROXY_URLS
+        sync: false
+      # Tier 1 (fallback provider) -- optional. Set together with PROXY_URLS for an
+      # automatic cascade (Crawlee escalates to this tier only when tier 0 is failing).
+      - key: PROXY_URLS_TIER2
         sync: false
       # Any OpenAI-compatible API (Gemini, DeepSeek, Qwen, Groq, OpenRouter, OpenAI, Ollama…). See README.
       - key: LLM_BASE_URL

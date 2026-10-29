@@ -97,11 +97,27 @@ export interface InstagramInput {
     renderingMode: 'auto' | 'http' | 'browser';
 }
 
+/**
+ * 29 oct 2026: Facebook Pages (negocios/creadores), público, sin login.
+ * A diferencia de Instagram, acá no hay un endpoint JSON anónimo documentado
+ * y estable -- en vez de parsear HTML a mano (frágil, sin forma de probarlo
+ * contra Facebook real desde acá), esto delega en el motor `web` genérico
+ * (extractPage(): OpenGraph, JSON-LD, selectores adaptativos, contactos),
+ * apuntado a la sección "About" de cada página -- ver facebook/crawler.ts.
+ */
+export interface FacebookInput {
+    /** Usernames, @handles o URLs completas de facebook.com/<page>. */
+    pages: string[];
+    /** `auto` cae a 'browser' -- la sección About casi siempre necesita JS. */
+    renderingMode: 'auto' | 'http' | 'browser';
+}
+
 export interface Input {
-    mode: 'web' | 'google' | 'instagram';
+    mode: 'web' | 'google' | 'instagram' | 'facebook';
     web: WebInput;
     google: GoogleInput;
     instagram: InstagramInput;
+    facebook: FacebookInput;
     maxConcurrency: number;
     maxRequestRetries: number;
     requestTimeoutSecs: number;
@@ -151,13 +167,20 @@ const INSTAGRAM_DEFAULTS: InstagramInput = {
     renderingMode: 'auto',
 };
 
-type RawInput = Partial<Omit<Input, 'web' | 'google' | 'instagram'>> & Partial<WebInput> & Partial<GoogleInput> & Partial<InstagramInput> & {
+const FACEBOOK_DEFAULTS: FacebookInput = {
+    pages: [],
+    renderingMode: 'auto',
+};
+
+type RawInput = Partial<Omit<Input, 'web' | 'google' | 'instagram' | 'facebook'>> & Partial<WebInput> & Partial<GoogleInput> & Partial<InstagramInput> & Partial<FacebookInput> & {
     web?: Partial<WebInput>;
     google?: Partial<GoogleInput>;
     instagram?: Partial<InstagramInput>;
+    facebook?: Partial<FacebookInput>;
     usernames?: string | string[];
     queries?: string | string[];
     startUrls?: (string | { url: string })[];
+    pages?: string | string[];
 };
 
 /**
@@ -194,12 +217,23 @@ export function normalizeInput(raw: RawInput | null | undefined): Input {
         throw new Error(`Input error: unknown timeZone "${instagram.timeZone}"`);
     }
 
+    const facebook = pick(FACEBOOK_DEFAULTS, r.facebook as Partial<FacebookInput>);
+    const fbPages: string | string[] = (r.facebook?.pages as string | string[] | undefined) ?? r.pages ?? [];
+    facebook.pages = (Array.isArray(fbPages) ? fbPages : fbPages.split(/[\n,]/)).map((u: string) => u.trim()).filter(Boolean);
+
     const mode =
         r.mode ??
-        (instagram.usernames.length || instagram.discoverQuery ? 'instagram' : google.queries.length && !web.startUrls.length ? 'google' : 'web');
+        (facebook.pages.length
+            ? 'facebook'
+            : instagram.usernames.length || instagram.discoverQuery
+              ? 'instagram'
+              : google.queries.length && !web.startUrls.length
+                ? 'google'
+                : 'web');
     if (mode === 'instagram' && !instagram.usernames.length && !instagram.discoverQuery) {
         throw new Error('Input error: "usernames" or "discoverQuery" is required in instagram mode.');
     }
+    if (mode === 'facebook' && !facebook.pages.length) throw new Error('Input error: "pages" is required in facebook mode.');
     if (mode === 'web' && !web.startUrls.length) throw new Error('Input error: "startUrls" is required in web mode.');
     if (mode === 'google' && !google.queries.length) throw new Error('Input error: "queries" is required in google mode.');
     for (const { url } of web.startUrls) {
@@ -212,6 +246,7 @@ export function normalizeInput(raw: RawInput | null | undefined): Input {
         web,
         google,
         instagram,
+        facebook,
         maxConcurrency: r.maxConcurrency ?? 10,
         maxRequestRetries: r.maxRequestRetries ?? 3,
         requestTimeoutSecs: r.requestTimeoutSecs ?? 60,

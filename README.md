@@ -140,7 +140,8 @@ hashtags compartidos entre competidores y los 10 mejores posts del nicho.
 | Variable | Por defecto | Qué hace |
 |---|---|---|
 | `API_KEY` | — | Clave de la API (sin ella la API queda abierta) |
-| `PROXY_URLS` | — | Proxies separados por coma; se rotan por sesión |
+| `PROXY_URLS` | — | Proxies separados por coma (tier 0, el proveedor preferido); se rotan por sesión |
+| `PROXY_URLS_TIER2` | — | Proveedor de respaldo (tier 1) -- opcional. Si está seteado junto con `PROXY_URLS`, Crawlee prueba primero el tier 0 y escala sola al tier 1 cuando el tier 0 viene fallando (y puede volver a bajar si se recupera). Con solo `PROXY_URLS` el comportamiento es igual que antes (lista plana, sin tiers). |
 | `MAX_CONCURRENT_JOBS` | 2 | Trabajos simultáneos; el resto espera en cola |
 | `MAX_BROWSER_CONCURRENCY` | 4 (web) / 2 (Google) | Pestañas de Chromium simultáneas |
 | `SYNC_TIMEOUT_SECS` | 120 | Tras este tiempo, `/google` y `/scrape` devuelven 202 + `id` |
