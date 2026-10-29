@@ -6,7 +6,7 @@
  *      GraphQL/JSON the page itself loads — no hard-coded doc_id needed.             [instagram-graphql-scraper]
  * Optional niche discovery via Google `site:instagram.com <query>`.
  */
-import { BasicCrawler, PlaywrightCrawler, log, type BasicCrawlingContext } from 'crawlee';
+import { BasicCrawler, PlaywrightCrawler, playwrightUtils, log, type BasicCrawlingContext } from 'crawlee';
 import type { Page } from 'playwright';
 import type { Input } from '../input.js';
 import { runGoogle } from '../google/crawler.js';
@@ -187,6 +187,14 @@ export async function runInstagram(input: Input, emit: Emit<ProfileRecord | Nich
                 launchContext: { launchOptions: { args: CHROMIUM_ARGS } },
                 browserPoolOptions: { useFingerprints: true },
                 preNavigationHooks: [
+                    // 29 oct 2026: bloquea imágenes/fuentes/video -- no afecta la
+                    // captura de JSON de abajo (viene de XHR/fetch, no de <img>), y
+                    // reduce mucho el consumo de proxy pago por GB (perfiles con
+                    // fotos de portada + miniaturas de posts eran justo lo más
+                    // pesado de cargar). Mismo helper que ya usa web/crawler.ts.
+                    async ({ page }) => {
+                        await playwrightUtils.blockRequests(page, { extraUrlPatterns: ['.mp4', '.webm', '.woff', '.woff2', '.ttf'] });
+                    },
                     async ({ page, request }) => {
                         // Capture the JSON the profile page loads by itself.
                         const { username } = request.userData as { username: string };

@@ -7,7 +7,7 @@
  *      session (new fingerprint, new proxy IP) before retrying.
  * Pagination follows the "next page" link one page at a time, so we never ask for pages that don't exist.
  */
-import { CheerioCrawler, PlaywrightCrawler, log, type RequestQueue } from 'crawlee';
+import { CheerioCrawler, PlaywrightCrawler, playwrightUtils, log, type RequestQueue } from 'crawlee';
 import type { Page } from 'playwright';
 import type { Input } from '../input.js';
 import { detectBlock } from '../shared/antibot.js';
@@ -142,6 +142,17 @@ export async function runGoogle(input: Input, emit: Emit<SerpRecord>, signal?: A
                     useFingerprints: true,
                     fingerprintOptions: { fingerprintGeneratorOptions: { browsers: ['chrome'], operatingSystems: ['windows', 'macos'], devices: ['desktop'], locales: [g.languageCode] } },
                 },
+                // 29 oct 2026: faltaba acá (ya existía en web/crawler.ts) -- sin esto,
+                // cada búsqueda escalada a browser carga la página de Google completa
+                // (imágenes, ads, fuentes, video), varios MB por búsqueda en vez de
+                // unos cientos de KB. Con proxy residencial pago por GB, esto es la
+                // diferencia entre ~300 búsquedas/GB y ~3000+/GB. No afecta el
+                // parseo: #search/#rso/#botstuff son selectores de DOM, no de CSS.
+                preNavigationHooks: [
+                    async ({ page }) => {
+                        await playwrightUtils.blockRequests(page, { extraUrlPatterns: ['.mp4', '.webm', '.woff', '.woff2', '.ttf'] });
+                    },
+                ],
                 requestHandler: async ({ request, page, response, session }) => {
                     if (signal?.aborted) return;
                     const ud = request.userData as Ud;

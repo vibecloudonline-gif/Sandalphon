@@ -4,6 +4,7 @@
  *   GET    /                web interface (public/index.html; it asks for the API key)
  *   GET    /health
  *   GET    /config          what the server has configured (AI, proxies), for the web interface
+ *   GET    /proxy-health    tests each configured proxy tier directly (real Playwright + proxy, no scraping job) -- see shared/proxyHealth.ts
  *   POST   /google          { queries, maxPagesPerQuery?, countryCode?, languageCode?, ... }
  *   POST   /scrape          { url | urls, fields?, renderingMode?, ... }   one page per URL, no crawling
  *   POST   /crawl           { startUrls, maxPages?, maxDepth?, ... }       always async
@@ -25,6 +26,7 @@ import { log } from 'crawlee';
 import { abortJob, createJob, fingerprints, getJob, publicJob, type Job, type JobOptions } from './jobs.js';
 import { llmConfig } from './ai/llm.js';
 import { toCsv } from './shared/csv.js';
+import { checkProxyHealth } from './shared/proxyHealth.js';
 
 const PORT = Number(process.env.PORT ?? 10000);
 const API_KEY = process.env.API_KEY ?? '';
@@ -116,7 +118,7 @@ async function route(req: IncomingMessage, res: ServerResponse) {
         return res.end(UI_HTML);
     }
     if (req.method === 'GET' && (path === '/health' || path === '/')) {
-        return send(res, 200, { ok: true, service: 'ultimate-scraper', endpoints: ['POST /ask', 'POST /google', 'POST /scrape', 'POST /crawl', 'POST /instagram', 'POST /facebook', 'GET /jobs/:id', 'GET /jobs/:id/results'] });
+        return send(res, 200, { ok: true, service: 'ultimate-scraper', endpoints: ['POST /ask', 'POST /google', 'POST /scrape', 'POST /crawl', 'POST /instagram', 'POST /facebook', 'GET /proxy-health', 'GET /jobs/:id', 'GET /jobs/:id/results'] });
     }
     if (!authorized(req)) throw new HttpError(401, 'Missing or invalid API key');
 
@@ -129,6 +131,16 @@ async function route(req: IncomingMessage, res: ServerResponse) {
             // Ver shared/setup.ts's makeProxy().
             proxyTiers: Number(Boolean(process.env.PROXY_URLS?.trim())) + Number(Boolean(process.env.PROXY_URLS_TIER2?.trim())),
         });
+    }
+
+    // 29 oct 2026: GET en vez de POST -- es solo lectura/diagnóstico, no un job de
+    // scraping (no pasa por jobs.ts). Abre un browser real por cada tier
+    // configurado, así que puede tardar 10-20s -- intencional, un chequeo rápido
+    // y uno confiable son objetivos distintos acá.
+    if (req.method === 'GET' && path === '/proxy-health') {
+        const results = await checkProxyHealth();
+        if (!results.length) return send(res, 200, { ok: null, message: 'Ningún PROXY_URLS/PROXY_URLS_TIER2 configurado -- las scrapes corren sin proxy.', tiers: [] });
+        return send(res, 200, { ok: results.every((r) => r.ok), tiers: results });
     }
 
     if (req.method === 'POST' && path === '/google') {
