@@ -19,6 +19,9 @@ export interface OrganicResult {
     description?: string;
     date?: string;
     siteLinks?: { title: string; url: string }[];
+    /** Local Pack results only (star rating + review count) -- see addOrganic(). */
+    rating?: number;
+    reviewsCount?: number;
 }
 
 export interface PaidResult {
@@ -52,6 +55,27 @@ export function parseSerp(html: string, base = 'https://www.google.com'): SerpPa
     $('#search a:has(h3), #rso a:has(h3), #center_col a:has(h3)').each((_, a) => {
         if ($(a).closest('#tads, #bottomads, [data-text-ad], .commercial-unit-desktop-top').length) return;
         addOrganic($, organic, a as Element, clean($(a).find('h3').first().text()), base, adUrls);
+    });
+
+    // Strategy 1b (Local Pack, confirmed real 30 oct 2026 against a live search
+    // for "nutritionist private practice California"): Google now also answers
+    // local-intent queries with a block of real businesses under a "Places"
+    // heading, using `[role="heading"]` instead of a literal <h3>, and wrapping
+    // the outbound link in an opaque `/goto?url=<encoded blob>` that can't be
+    // decoded client-side -- but each card also carries a plain `<a data-url>`
+    // with the real destination, which addOrganic() now prefers over the
+    // encoded href. Each business actually has 2 `data-url` anchors (its real
+    // site, and a `/maps/dir/...` "directions" link) -- filtering to `http`
+    // keeps only the real one. The title isn't a DOM ancestor/descendant of
+    // this anchor (confirmed against the real markup), so both are located
+    // independently via the same CONTAINER_SELECTORS scope addOrganic()
+    // already uses for the description/siteLinks/rating lookup below.
+    $('#search a[data-url^="http"], #rso a[data-url^="http"]').each((_, a) => {
+        if ($(a).closest('#tads, #bottomads, [data-text-ad], .commercial-unit-desktop-top').length) return;
+        const scope = $(a).closest(CONTAINER_SELECTORS);
+        const title = clean(scope.find('[role="heading"]').first().text());
+        if (!title) return; // not a Local Pack card (People Also Ask, AI Overview, etc. have no heading in this scope)
+        addOrganic($, organic, a as Element, title, base, adUrls);
     });
 
     // Strategy 2 (basic HTML / Lynx): /url?q= links whose text is the title.
@@ -108,7 +132,13 @@ export function parseSerp(html: string, base = 'https://www.google.com'): SerpPa
 }
 
 function addOrganic($: CheerioAPI, out: Map<string, Omit<OrganicResult, 'position'>>, a: Element, title: string, base: string, adUrls: Set<string>) {
-    const url = unwrapGoogleHref($(a).attr('href'), base);
+    // `data-url` (confirmed real 30 oct 2026, Local Pack results) is the plain,
+    // already-decoded destination Google ships alongside the opaque
+    // `/goto?url=<encoded blob>` href -- prefer it outright when present; it's
+    // never wrong and needs no unwrapping. Classic results (still /url?q=, or
+    // no wrapper at all) fall back to unwrapGoogleHref() as before.
+    const dataUrl = $(a).attr('data-url');
+    const url = (dataUrl && /^https?:\/\//i.test(dataUrl) ? dataUrl : undefined) ?? unwrapGoogleHref($(a).attr('href'), base);
     if (!url || !title || out.has(url) || adUrls.has(url)) return;
     const container = $(a).closest(CONTAINER_SELECTORS);
     const scope = container.length ? container : $(a).parent().parent();
@@ -134,6 +164,18 @@ function addOrganic($: CheerioAPI, out: Map<string, Omit<OrganicResult, 'positio
     }
     const displayedUrl = clean(scope.find('cite').first().text()) || undefined;
 
+    // Local Pack rating -- e.g. aria-label="Rated 5.0 out of 5, 61 user
+    // reviews" (an accessibility attribute, not a class name -- survives
+    // redesigns better than most of this file's other selectors).
+    let rating: number | undefined;
+    let reviewsCount: number | undefined;
+    const ratingLabel = scope.find('[aria-label*="Rated" i], [aria-label*="Calificado" i]').first().attr('aria-label');
+    const ratingMatch = ratingLabel?.match(/([\d.,]+)\s*(?:out of|de)\s*5,?\s*([\d.,]+)?/i);
+    if (ratingMatch) {
+        rating = Number(ratingMatch[1].replace(',', '.')) || undefined;
+        if (ratingMatch[2]) reviewsCount = Number(ratingMatch[2].replace(/[.,]/g, '')) || undefined;
+    }
+
     const siteLinks: { title: string; url: string }[] = [];
     scope.find('table a, .HiHjCd a, .usJj9c a').each((_, sl) => {
         const slUrl = unwrapGoogleHref($(sl).attr('href'), base);
@@ -141,7 +183,16 @@ function addOrganic($: CheerioAPI, out: Map<string, Omit<OrganicResult, 'positio
         if (slUrl && slTitle && slUrl !== url) siteLinks.push({ title: slTitle, url: slUrl });
     });
 
-    out.set(url, { title, url, displayedUrl, description, date, ...(siteLinks.length ? { siteLinks } : {}) });
+    out.set(url, {
+        title,
+        url,
+        displayedUrl,
+        description,
+        date,
+        ...(rating !== undefined ? { rating } : {}),
+        ...(reviewsCount !== undefined ? { reviewsCount } : {}),
+        ...(siteLinks.length ? { siteLinks } : {}),
+    });
 }
 
 function parseAds($: CheerioAPI, base: string): PaidResult[] {
