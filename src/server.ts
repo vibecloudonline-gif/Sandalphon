@@ -188,7 +188,12 @@ async function route(req: IncomingMessage, res: ServerResponse) {
         const limit = Math.min(10_000, Math.max(1, Number(url.searchParams.get('limit') ?? 1000)));
         const slice = job.results.slice(offset, offset + limit);
         const format = url.searchParams.get('format') ?? 'json';
-        if (format === 'csv') return send(res, 200, toCsv(slice, job.mode === 'ask' ? 'web' : job.mode, url.searchParams.get('view') === 'profiles' ? 'profiles' : 'posts'), 'text/csv');
+        // 30 oct 2026: 'facebook' cae a 'web' acá -- el modo facebook produce
+        // el mismo shape de PageRecord que 'web' (ver facebook/crawler.ts,
+        // reusa runWeb()), así que el CSV genérico de toCsv() ya le sirve tal
+        // cual, sin necesidad de una rama nueva en csv.ts.
+        const csvMode = job.mode === 'ask' || job.mode === 'facebook' ? 'web' : job.mode;
+        if (format === 'csv') return send(res, 200, toCsv(slice, csvMode, url.searchParams.get('view') === 'profiles' ? 'profiles' : 'posts'), 'text/csv');
         if (format === 'ndjson') return send(res, 200, slice.map((r) => JSON.stringify(r)).join('\n'), 'application/x-ndjson');
         return send(res, 200, { total: job.results.length, offset, limit, items: slice });
     }
