@@ -6,6 +6,7 @@ import { runGoogle } from './google/crawler.js';
 import { runWeb } from './web/crawler.js';
 import { runInstagram } from './instagram/crawler.js';
 import { runFacebook } from './facebook/crawler.js';
+import { searchOsm } from './osm/discover.js';
 import { planScrape, writeInsights } from './ai/brief.js';
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'aborted';
@@ -61,6 +62,14 @@ export async function runInput(input: Input, emit: (r: unknown) => void | Promis
     if (input.mode === 'google') return runGoogle(input, emit, signal);
     if (input.mode === 'instagram') return runInstagram(input, emit, signal);
     if (input.mode === 'facebook') return runFacebook(input, emit, signal);
+    if (input.mode === 'osm') {
+        const businesses = await searchOsm(input.osm);
+        for (const b of businesses) {
+            if (signal?.aborted) break;
+            await emit(b);
+        }
+        return { businesses: businesses.length, failed: [] };
+    }
     return runWeb(input, emit, fingerprints, signal);
 }
 

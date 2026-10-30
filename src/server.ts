@@ -10,6 +10,7 @@
  *   POST   /crawl           { startUrls, maxPages?, maxDepth?, ... }       always async
  *   POST   /instagram       { usernames?, discoverQuery?, maxPostsPerProfile?, timeZone?, ... }
  *   POST   /facebook        { pages }   usernames, @handles or facebook.com URLs -- see facebook/crawler.ts
+ *   POST   /osm             { term, location, radiusKm?, maxResults? }   free, no proxy -- see osm/discover.ts
  *   POST   /ask             { brief }   the AI plans the scrape from the client's words, runs it and answers
  *   Any POST also accepts "brief": with it, an AI answer to the brief is added to the job ("insights").
  *   GET    /jobs/:id
@@ -118,7 +119,7 @@ async function route(req: IncomingMessage, res: ServerResponse) {
         return res.end(UI_HTML);
     }
     if (req.method === 'GET' && (path === '/health' || path === '/')) {
-        return send(res, 200, { ok: true, service: 'ultimate-scraper', endpoints: ['POST /ask', 'POST /google', 'POST /scrape', 'POST /crawl', 'POST /instagram', 'POST /facebook', 'GET /proxy-health', 'GET /jobs/:id', 'GET /jobs/:id/results'] });
+        return send(res, 200, { ok: true, service: 'ultimate-scraper', endpoints: ['POST /ask', 'POST /google', 'POST /scrape', 'POST /crawl', 'POST /instagram', 'POST /facebook', 'POST /osm', 'GET /proxy-health', 'GET /jobs/:id', 'GET /jobs/:id/results'] });
     }
     if (!authorized(req)) throw new HttpError(401, 'Missing or invalid API key');
 
@@ -171,6 +172,11 @@ async function route(req: IncomingMessage, res: ServerResponse) {
     if (req.method === 'POST' && path === '/facebook') {
         const body = await readJson(req);
         const job = createJob({ ...body, mode: 'facebook' }, jobOptions(body));
+        return respondWhenDone(res, job, body.async === true);
+    }
+    if (req.method === 'POST' && path === '/osm') {
+        const body = await readJson(req);
+        const job = createJob({ ...body, mode: 'osm' }, jobOptions(body));
         return respondWhenDone(res, job, body.async === true);
     }
     if (req.method === 'POST' && path === '/crawl') {

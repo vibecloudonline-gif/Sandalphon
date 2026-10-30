@@ -2,10 +2,14 @@
  * Flattens records to CSV. SERP pages → one row per organic result; web pages → one row per page;
  * Instagram → one row per post (with the profile's key metrics), or per profile with `instagramView: 'profiles'`.
  */
-export function toCsv(records: unknown[], mode: 'web' | 'google' | 'instagram', instagramView: 'posts' | 'profiles' = 'posts'): string {
+export function toCsv(records: unknown[], mode: 'web' | 'google' | 'instagram' | 'osm', instagramView: 'posts' | 'profiles' = 'posts'): string {
     const rows: Record<string, unknown>[] = [];
     for (const rec of records as Record<string, any>[]) {
-        if (mode === 'instagram') {
+        if (mode === 'osm') {
+            // 30 oct 2026 -- un OsmBusiness por fila (ver osm/discover.ts), no el
+            // shape de PageRecord: columnas propias, no las de 'web'.
+            rows.push({ name: rec.name, phone: rec.phone, website: rec.website, address: rec.address, city: rec.city, category: rec.category, osmUrl: rec.osmUrl });
+        } else if (mode === 'instagram') {
             if (rec.type !== 'profile') continue;
             const pr = rec.profile;
             const a = rec.analysis;

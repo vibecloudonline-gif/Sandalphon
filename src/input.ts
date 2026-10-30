@@ -112,12 +112,27 @@ export interface FacebookInput {
     renderingMode: 'auto' | 'http' | 'browser';
 }
 
+/**
+ * 30 oct 2026 -- Fase 1 del plan de integración de Harvey (ver osm/discover.ts
+ * para el detalle completo y el disclaimer de cobertura real). Gratis, sin
+ * proxy, sin API key -- API pública de OpenStreetMap (Nominatim + Overpass).
+ */
+export interface OsmInput {
+    /** Rubro -- debe matchear un término de osm/discover.ts's TAG_MAP. */
+    term: string;
+    /** Ciudad/zona a geocodificar, ej. "Los Angeles, CA". */
+    location: string;
+    radiusKm: number;
+    maxResults: number;
+}
+
 export interface Input {
-    mode: 'web' | 'google' | 'instagram' | 'facebook';
+    mode: 'web' | 'google' | 'instagram' | 'facebook' | 'osm';
     web: WebInput;
     google: GoogleInput;
     instagram: InstagramInput;
     facebook: FacebookInput;
+    osm: OsmInput;
     maxConcurrency: number;
     maxRequestRetries: number;
     requestTimeoutSecs: number;
@@ -172,11 +187,19 @@ const FACEBOOK_DEFAULTS: FacebookInput = {
     renderingMode: 'auto',
 };
 
-type RawInput = Partial<Omit<Input, 'web' | 'google' | 'instagram' | 'facebook'>> & Partial<WebInput> & Partial<GoogleInput> & Partial<InstagramInput> & Partial<FacebookInput> & {
+const OSM_DEFAULTS: OsmInput = {
+    term: '',
+    location: '',
+    radiusKm: 25,
+    maxResults: 50,
+};
+
+type RawInput = Partial<Omit<Input, 'web' | 'google' | 'instagram' | 'facebook' | 'osm'>> & Partial<WebInput> & Partial<GoogleInput> & Partial<InstagramInput> & Partial<FacebookInput> & Partial<OsmInput> & {
     web?: Partial<WebInput>;
     google?: Partial<GoogleInput>;
     instagram?: Partial<InstagramInput>;
     facebook?: Partial<FacebookInput>;
+    osm?: Partial<OsmInput>;
     usernames?: string | string[];
     queries?: string | string[];
     startUrls?: (string | { url: string })[];
@@ -221,6 +244,13 @@ export function normalizeInput(raw: RawInput | null | undefined): Input {
     const fbPages: string | string[] = (r.facebook?.pages as string | string[] | undefined) ?? r.pages ?? [];
     facebook.pages = (Array.isArray(fbPages) ? fbPages : fbPages.split(/[\n,]/)).map((u: string) => u.trim()).filter(Boolean);
 
+    // osm: sin heurística de auto-detección (a diferencia de facebook/instagram,
+    // "term" + "location" no son señales exclusivas de este modo) -- siempre
+    // explícito vía `mode: 'osm'`.
+    const osm = pick(OSM_DEFAULTS, r.osm as Partial<OsmInput>);
+    osm.term = osm.term.trim();
+    osm.location = osm.location.trim();
+
     const mode =
         r.mode ??
         (facebook.pages.length
@@ -234,6 +264,7 @@ export function normalizeInput(raw: RawInput | null | undefined): Input {
         throw new Error('Input error: "usernames" or "discoverQuery" is required in instagram mode.');
     }
     if (mode === 'facebook' && !facebook.pages.length) throw new Error('Input error: "pages" is required in facebook mode.');
+    if (mode === 'osm' && (!osm.term || !osm.location)) throw new Error('Input error: "term" and "location" are required in osm mode.');
     if (mode === 'web' && !web.startUrls.length) throw new Error('Input error: "startUrls" is required in web mode.');
     if (mode === 'google' && !google.queries.length) throw new Error('Input error: "queries" is required in google mode.');
     for (const { url } of web.startUrls) {
@@ -247,6 +278,7 @@ export function normalizeInput(raw: RawInput | null | undefined): Input {
         google,
         instagram,
         facebook,
+        osm,
         maxConcurrency: r.maxConcurrency ?? 10,
         maxRequestRetries: r.maxRequestRetries ?? 3,
         requestTimeoutSecs: r.requestTimeoutSecs ?? 60,
