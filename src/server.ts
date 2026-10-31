@@ -119,7 +119,16 @@ async function route(req: IncomingMessage, res: ServerResponse) {
         return res.end(UI_HTML);
     }
     if (req.method === 'GET' && (path === '/health' || path === '/')) {
-        return send(res, 200, { ok: true, service: 'ultimate-scraper', endpoints: ['POST /ask', 'POST /google', 'POST /scrape', 'POST /crawl', 'POST /instagram', 'POST /facebook', 'POST /osm', 'GET /proxy-health', 'GET /jobs/:id', 'GET /jobs/:id/results'] });
+        // 31 oct 2026: esta lista no tenía `DELETE /jobs/:id` -- existe de
+        // verdad en el router de /jobs de más abajo (llama a abortJob()),
+        // solo faltaba en esta documentación. Importa en la práctica: sin
+        // saber que existe, un job que un cliente abandona (ej. timeout del
+        // lado del cliente) sigue corriendo y consumiendo recursos del lado
+        // del servidor indefinidamente -- confirmado real hoy mismo
+        // (saturación real del free tier por varios jobs abandonados
+        // acumulados, sin forma de cancelarlos sin conocer su id de
+        // antemano).
+        return send(res, 200, { ok: true, service: 'ultimate-scraper', endpoints: ['POST /ask', 'POST /google', 'POST /scrape', 'POST /crawl', 'POST /instagram', 'POST /facebook', 'POST /osm', 'GET /proxy-health', 'GET /jobs/:id', 'GET /jobs/:id/results', 'DELETE /jobs/:id'] });
     }
     if (!authorized(req)) throw new HttpError(401, 'Missing or invalid API key');
 
