@@ -70,7 +70,20 @@ export function parseSerp(html: string, base = 'https://www.google.com'): SerpPa
     // this anchor (confirmed against the real markup), so both are located
     // independently via the same CONTAINER_SELECTORS scope addOrganic()
     // already uses for the description/siteLinks/rating lookup below.
-    $('#search a[data-url^="http"], #rso a[data-url^="http"]').each((_, a) => {
+    //
+    // CORRECCIÓN (31 oct 2026, bug real encontrado con evidencia -- una
+    // búsqueda real de "nutritionist Los Angeles CA" devolvía 0 resultados
+    // pese a tener un Local Pack real en el HTML, confirmado con grep de
+    // `rllt__details`/ratings/Directions): el widget de Local Pack NO
+    // siempre vive dentro de `#search`/`#rso` -- esta vez estaba en otro
+    // contenedor del documento (confirmado trazando los ancestros del
+    // anchor real hasta la raíz). Restringir a esos 2 IDs es una suposición
+    // de estructura que no siempre se cumple; `data-url^="http"` ya es un
+    // atributo lo bastante específico de Google (solo lo emite para links
+    // de negocios del Local Pack) como para no necesitar ese scope --
+    // verificado sin regresión contra un HTML real previo que sí tenía el
+    // Local Pack dentro de #search (3/3 resultados idénticos antes/después).
+    $('a[data-url^="http"]').each((_, a) => {
         if ($(a).closest('#tads, #bottomads, [data-text-ad], .commercial-unit-desktop-top').length) return;
         const scope = $(a).closest(CONTAINER_SELECTORS);
         const title = clean(scope.find('[role="heading"]').first().text());
