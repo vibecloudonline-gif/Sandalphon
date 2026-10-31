@@ -91,6 +91,66 @@ export function parseSerp(html: string, base = 'https://www.google.com'): SerpPa
         addOrganic($, organic, a as Element, title, base, adUrls);
     });
 
+    // Strategy 1c (Local Pack sin sitio web -- confirmado real 31 oct 2026
+    // contra búsquedas de "gym"/"supplement store": muchos negocios reales
+    // (sobre todo gimnasios independientes chicos, que es justo el rubro
+    // objetivo) no tienen botón "Website", solo "Directions" -- Strategy 1b
+    // los pierde por completo porque solo mira el anchor `data-url^="http"`,
+    // aunque el nombre/teléfono/rating están igual en texto plano dentro de
+    // la misma card. El anchor de "Directions" (`data-url^="/maps/dir/"`)
+    // SÍ está presente en el 100% de las cards del Local Pack, con o sin
+    // sitio web -- sirve de ancla universal. Se usa ese link de Maps como
+    // `url` del lead solo cuando la card no tiene sitio real (si lo tiene,
+    // Strategy 1b ya la agregó con la url real, deduplicado por `title`).
+    const titlesWithRealSite = new Set([...organic.values()].map((r) => r.title));
+    $('a[data-url^="/maps/dir/"]').each((_, a) => {
+        const $a = $(a);
+        if ($a.closest('#tads, #bottomads, [data-text-ad], .commercial-unit-desktop-top').length) return;
+        const scope = $a.closest(CONTAINER_SELECTORS);
+        const title = clean(scope.find('[role="heading"]').first().text());
+        if (!title || titlesWithRealSite.has(title)) return;
+        const mapsHref = $a.attr('data-url');
+        if (!mapsHref) return;
+        addOrganic($, organic, a as Element, title, base, adUrls, new URL(mapsHref, base).href);
+    });
+
+    // Strategy 1d (Local Pack sin ningún link navegable -- confirmado real
+    // 31 oct 2026 contra "supplement store Los Angeles CA"): esta variante
+    // del widget (carrusel horizontal, confirmado con evidencia real contra
+    // el HTML en vivo) no envuelve cada card en un <a> en absoluto -- la
+    // navegación es vía JS sobre un <div>, sin href ni data-url, así que ni
+    // 1b ni 1c encuentran nada. Mismo texto plano que las otras variantes
+    // (nombre, rating, categoría, ciudad, teléfono) -- se extrae directo del
+    // contenedor usando [role="heading"] + el aria-label de rating como
+    // ancla doble (evita falsos positivos: controles de UI como "Choose
+    // what you're giving feedback on" también son role="heading" pero
+    // nunca tienen un rating al lado). Clave sintética (nombre+teléfono),
+    // no hay url real para deduplicar.
+    //
+    // Scope restringido a `[class*="rllt"]` (no al CONTAINER_SELECTORS
+    // genérico de más arriba): confirmado con evidencia real que ese
+    // selector ancho matchea también el wrapper de TODO el widget (ej. el
+    // heading de grupo "Places"/"Businesses"), y como `.find()` busca
+    // hacia abajo, ese wrapper "hereda" el rating del primer negocio real
+    // dentro -- generaba un lead falso con el nombre del heading de grupo.
+    // `rllt__details`/`rllt__borderless` son las clases que Google usa
+    // específicamente por card individual, confirmado 1:1 contra los 3
+    // negocios reales de esta variante (sin falsos positivos).
+    const titlesSeen = new Set([...organic.values()].map((r) => r.title));
+    $('[role="heading"]').each((_, h) => {
+        const $h = $(h);
+        const title = clean($h.text());
+        if (!title || titlesSeen.has(title)) return;
+        const scope = $h.closest('[class*="rllt"]');
+        if (!scope.length) return;
+        const ratingLabel = scope.find('[aria-label*="Rated" i], [aria-label*="Calificado" i]').first().attr('aria-label');
+        if (!ratingLabel) return; // sin rating al lado, no es una card de negocio del Local Pack
+        titlesSeen.add(title);
+        const text = clean(scope.text());
+        const phone = text.match(/\(\d{3}\)\s?\d{3}-\d{4}/)?.[0];
+        addOrganic($, organic, h as unknown as Element, title, base, adUrls, `local-pack:${title}::${phone ?? ''}`);
+    });
+
     // Strategy 2 (basic HTML / Lynx): /url?q= links whose text is the title.
     if (organic.size === 0) {
         $('a[href^="/url?q="], a[href*="google.com/url?q="]').each((_, a) => {
@@ -144,14 +204,18 @@ export function parseSerp(html: string, base = 'https://www.google.com'): SerpPa
     };
 }
 
-function addOrganic($: CheerioAPI, out: Map<string, Omit<OrganicResult, 'position'>>, a: Element, title: string, base: string, adUrls: Set<string>) {
+function addOrganic($: CheerioAPI, out: Map<string, Omit<OrganicResult, 'position'>>, a: Element, title: string, base: string, adUrls: Set<string>, forcedUrl?: string) {
     // `data-url` (confirmed real 30 oct 2026, Local Pack results) is the plain,
     // already-decoded destination Google ships alongside the opaque
     // `/goto?url=<encoded blob>` href -- prefer it outright when present; it's
     // never wrong and needs no unwrapping. Classic results (still /url?q=, or
     // no wrapper at all) fall back to unwrapGoogleHref() as before.
+    // `forcedUrl` (31 oct 2026, Strategy 1c): el link de Maps ya resuelto,
+    // para cards del Local Pack sin sitio web -- se usa tal cual, sin pasar
+    // por la lógica de arriba (que en ese caso miraría el anchor de
+    // "Directions", no el de la card real).
     const dataUrl = $(a).attr('data-url');
-    const url = (dataUrl && /^https?:\/\//i.test(dataUrl) ? dataUrl : undefined) ?? unwrapGoogleHref($(a).attr('href'), base);
+    const url = forcedUrl ?? (dataUrl && /^https?:\/\//i.test(dataUrl) ? dataUrl : undefined) ?? unwrapGoogleHref($(a).attr('href'), base);
     if (!url || !title || out.has(url) || adUrls.has(url)) return;
     const container = $(a).closest(CONTAINER_SELECTORS);
     const scope = container.length ? container : $(a).parent().parent();
