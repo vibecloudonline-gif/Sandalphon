@@ -136,17 +136,28 @@ export function parseSerp(html: string, base = 'https://www.google.com'): SerpPa
     // `rllt__details`/`rllt__borderless` son las clases que Google usa
     // específicamente por card individual, confirmado 1:1 contra los 3
     // negocios reales de esta variante (sin falsos positivos).
+    // "My Ad Center" (31 oct 2026, confirmado real contra "gym"/"supplement
+    // store"): el link de divulgación de anuncios de Google aparece como
+    // su propio `[role="heading"]` dentro del mismo scope `rllt` que una
+    // card paga real -- sin excluirlo, generaba 2 leads falsos por cada
+    // anuncio: "My Ad Center" suelto, y el nombre del negocio con "My Ad
+    // Center" pegado al final (mismo heading, texto concatenado). Se
+    // excluye cualquier card cuyo scope contenga esa frase -- es la señal
+    // de que es un anuncio pago, no un resultado orgánico del Local Pack
+    // (mismo criterio que la exclusión de #tads/#bottomads de arriba, que
+    // no alcanza a cubrir este formato de anuncio en particular).
     const titlesSeen = new Set([...organic.values()].map((r) => r.title));
     $('[role="heading"]').each((_, h) => {
         const $h = $(h);
         const title = clean($h.text());
-        if (!title || titlesSeen.has(title)) return;
+        if (!title || titlesSeen.has(title) || /ad center/i.test(title)) return;
         const scope = $h.closest('[class*="rllt"]');
         if (!scope.length) return;
         const ratingLabel = scope.find('[aria-label*="Rated" i], [aria-label*="Calificado" i]').first().attr('aria-label');
         if (!ratingLabel) return; // sin rating al lado, no es una card de negocio del Local Pack
-        titlesSeen.add(title);
         const text = clean(scope.text());
+        if (/my ad center/i.test(text)) return; // card de anuncio pago -- ver comentario arriba
+        titlesSeen.add(title);
         const phone = text.match(/\(\d{3}\)\s?\d{3}-\d{4}/)?.[0];
         addOrganic($, organic, h as unknown as Element, title, base, adUrls, `local-pack:${title}::${phone ?? ''}`);
     });
